@@ -698,7 +698,53 @@ public class VotApiClient {
         if (!ensureSession()) return false;
 
         String path = "/video-translation/audio";
-        return sendWorkerRequest(path, body, getVtransHeaders(path, body, oauthToken), "PUT") != null;
+        Map<String, String> headers = getVtransHeaders(path, body, oauthToken);
+        if (sendWorkerRequest(path, body, headers, "PUT") != null) return true;
+
+        // Audio can exceed proxy request limits after JSON byte-array expansion.
+        // Retry the same idempotent part as protobuf at its final Yandex endpoint.
+        Logger.printDebug(() -> "VOT audio upload: retrying direct Yandex endpoint");
+        HttpURLConnection connection = (HttpURLConnection) new URL(
+                "https://api.browser.yandex.ru/video-translation/audio").openConnection();
+        try {
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestMethod("PUT");
+            for (var header : headers.entrySet()) {
+                connection.setRequestProperty(header.getKey(), header.getValue());
+            }
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setDoOutput(true);
+            connection.setFixedLengthStreamingMode(body.length);
+            try (OutputStream output = connection.getOutputStream()) { output.write(body); }
+            int code = connection.getResponseCode();
+            Logger.printDebug(() -> "VOT direct audio upload: HTTP " + code);
+            if (code != HttpURLConnection.HTTP_OK) {
+                logUploadError(connection, headers);
+                return false;
+            }
+            return true;
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static void logUploadError(HttpURLConnection connection, Map<String, String> headers) {
+        try (InputStream error = connection.getErrorStream()) {
+            if (error == null) return;
+            byte[] bytes = new byte[512];
+            int count = error.read(bytes);
+            if (count <= 0) return;
+            String detail = new String(bytes, 0, count, StandardCharsets.UTF_8);
+            for (String value : headers.values()) {
+                if (value != null && !value.isEmpty()) detail = detail.replace(value, "<redacted>");
+            }
+            detail = detail.replaceAll("https?://\\S+", "<url>")
+                    .replaceAll("[A-Za-z0-9_=-]{20,}", "<id>")
+                    .replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", "?");
+            final String safeDetail = detail;
+            Logger.printDebug(() -> "VOT audio upload error detail: " + safeDetail);
+        } catch (Exception ignored) { }
     }
 
     /**
