@@ -59,6 +59,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -76,7 +77,6 @@ final class VotAudioDownloader {
     static final int CHUNK_SIZE_BYTES = 480 * 1024;
     private static final int CONNECTION_TIMEOUT_MS = 15_000;
     private static final int READ_TIMEOUT_MS = 30_000;
-    private static final String AUDIO_DOWNLOAD_TYPE = "web_api_steal_sig_and_n";
     private static final String YOUTUBE_BASE_URL = "https://m.youtube.com";
     private static final String YOUTUBE_CLIENT_NAME = "ANDROID_VR";
     private static final String YOUTUBE_CLIENT_VERSION = "1.65.10";
@@ -197,17 +197,16 @@ final class VotAudioDownloader {
         Logger.printDebug(() -> "VOT audio downloader: selected itag="
                 + audioFormat.itag() + ", mime=" + audioFormat.mimeType()
                 + ", bitrate=" + audioFormat.bitrate() + ", bytes=" + fileSize);
-        String fileId = makeFileId(audioFormat.itag(), fileSize);
+        // Match the current streaming-upload protocol: one opaque identity per
+        // source, with the final chunk announcing the complete part count.
+        String fileId = "random-web_mse_proxy-" + UUID.randomUUID();
         int parts = toPartsCount(fileSize);
-        if (parts <= 1) {
-            byte[] audioData = downloadRange(audioFormat, 0, fileSize - 1);
-            return VotApiClient.sendAudio(videoUrl, translationId, fileId, audioData);
-        }
         for (int i = 0; i < parts; i++) {
             long start = (long) i * CHUNK_SIZE_BYTES;
             long end = Math.min(fileSize - 1, start + CHUNK_SIZE_BYTES - 1);
             byte[] audioData = downloadRange(audioFormat, start, end);
-            if (!VotApiClient.sendPartialAudio(videoUrl, translationId, fileId, parts, 1, i, audioData)) {
+            int announcedParts = i == parts - 1 ? parts : 0;
+            if (!VotApiClient.sendPartialAudio(videoUrl, translationId, fileId, announcedParts, 1, i, audioData)) {
                 return false;
             }
             final int completed = i + 1;
@@ -575,12 +574,6 @@ final class VotAudioDownloader {
             throw new IOException("Invalid audio parts count: " + parts);
         }
         return (int) parts;
-    }
-
-    private static String makeFileId(int itag, long fileSize) {
-        return String.format(Locale.US,
-                "{\"downloadType\":\"%s\",\"itag\":%d,\"minChunkSize\":%d,\"fileSize\":\"%d\"}",
-                AUDIO_DOWNLOAD_TYPE, itag, CHUNK_SIZE_BYTES, fileSize);
     }
 
     private static boolean isEmpty(@Nullable String value) {
