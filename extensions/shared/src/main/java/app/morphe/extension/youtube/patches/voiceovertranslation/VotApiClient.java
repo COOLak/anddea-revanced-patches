@@ -84,13 +84,13 @@ public class VotApiClient {
             Pattern.compile("\\bproxyWorkerHost\\s*=\\s*[\"']([^\"']+)[\"']");
 
     private static final String HMAC_KEY = "bt8xH3VOlb4mqf0nqAibnDOoiPlXsisf";
-    private static final String COMPONENT_VERSION = "26.6.4.760";
+    private static final String COMPONENT_VERSION = "26.8.1.1024";
     private static final String VOT_MODULE = "video-translation";
     private static final double DEFAULT_DURATION = 310.0;
 
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36";
+            "(KHTML, like Gecko) Chrome/150.0.0.0 YaBrowser/26.8.0.0 Safari/537.36";
 
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
@@ -699,11 +699,12 @@ public class VotApiClient {
 
         String path = "/video-translation/audio";
         Map<String, String> headers = getVtransHeaders(path, body, oauthToken);
-        if (sendWorkerRequest(path, body, headers, "PUT") != null) return true;
+        if (body.length <= 480 * 1024
+                && sendWorkerRequest(path, body, headers, "PUT") != null) return true;
 
         // Audio can exceed proxy request limits after JSON byte-array expansion.
-        // Retry the same idempotent part as protobuf at its final Yandex endpoint.
-        Logger.printDebug(() -> "VOT audio upload: retrying direct Yandex endpoint");
+        // Send large parts directly; retry small rejected parts at the same endpoint.
+        Logger.printDebug(() -> "VOT audio upload: using direct Yandex endpoint, bytes=" + body.length);
         HttpURLConnection connection = (HttpURLConnection) new URL(
                 "https://api.browser.yandex.ru/video-translation/audio").openConnection();
         try {

@@ -72,9 +72,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 final class VotAudioDownloader {
-    // The worker expands each protobuf byte to up to four JSON bytes. Keep
-    // each envelope below 2 MiB, including metadata, for proxy body limits.
-    static final int CHUNK_SIZE_BYTES = 480 * 1024;
+    // Preserve the upstream audio upload chunk size. Large parts use the
+    // binary Yandex endpoint to avoid JSON expansion at the worker.
+    static final int CHUNK_SIZE_BYTES = 5_295_308;
     private static final int CONNECTION_TIMEOUT_MS = 15_000;
     private static final int READ_TIMEOUT_MS = 30_000;
     private static final String YOUTUBE_BASE_URL = "https://m.youtube.com";
