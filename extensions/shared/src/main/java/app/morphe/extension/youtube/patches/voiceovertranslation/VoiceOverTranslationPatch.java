@@ -643,9 +643,25 @@ public class VoiceOverTranslationPatch {
             if (streamingData instanceof com.google.protobuf.MessageLite stream
                     && videoDetails instanceof com.google.protobuf.MessageLite details) {
                 VotAudioSourceCache.put(stream.toByteArray(), details.toByteArray());
+                var data = app.morphe.extension.shared.innertube.utils.PlayerResponseOuterClass.StreamingData.parseFrom(stream.toByteArray());
+                var id = app.morphe.extension.shared.innertube.utils.PlayerResponseOuterClass.VideoDetails.parseFrom(details.toByteArray()).getVideoId();
+                Logger.printDebug(() -> "VOT native source: video=" + id + ", formats=" + data.getAdaptiveFormatsCount()
+                        + ", cached=" + VotAudioSourceCache.get(id).size() + ", sabr=" + !data.getServerAbrStreamingUrl().isEmpty());
+            } else {
+                Logger.printDebug(() -> "VOT native source: unavailable protobuf objects");
             }
         } catch (Exception e) {
             Logger.printDebug(() -> "VOT could not cache native audio formats", e);
+        }
+    }
+
+    public static void cachePlayerHeaders(String url, java.util.Map<String, String> headers) {
+        if (!Settings.VOT_ENABLED.get()) return;
+        try {
+            String videoId = VotPlayerRequestContext.put(url, headers);
+            if (videoId != null) Logger.printDebug(() -> "VOT player request context available for " + videoId);
+        } catch (RuntimeException e) {
+            Logger.printDebug(() -> "VOT player request context unavailable");
         }
     }
 

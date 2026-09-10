@@ -63,6 +63,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import app.morphe.extension.shared.utils.Logger;
+import app.morphe.extension.shared.spoof.ClientType;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -113,6 +114,17 @@ final class VotAudioDownloader {
                 Logger.printDebug(() -> "VOT native audio source unavailable; trying next source", e);
             }
         }
+        if (!VotPlayerRequestContext.get(videoId).isEmpty()) {
+            try {
+                Source source = fetchCreatorAudioFormat(videoId);
+                if (source != null) {
+                    Logger.printDebug(() -> "VOT audio downloader: trying signed-in Android Studio audio");
+                    return downloadAndSendSource(source, videoUrl, translationId);
+                }
+            } catch (Exception e) {
+                Logger.printDebug(() -> "VOT signed-in audio source unavailable", e);
+            }
+        }
         try {
             Source audioFormat = fetchAudioFormat(videoId);
             if (audioFormat == null || isEmpty(audioFormat.url())) {
@@ -123,6 +135,54 @@ final class VotAudioDownloader {
         } catch (Exception e) {
             Logger.printDebug(() -> "VOT audio downloader failed for " + videoId, e);
             return false;
+        }
+    }
+
+    @Nullable
+    private static Source fetchCreatorAudioFormat(String videoId) throws Exception {
+        ClientType profile = ClientType.ANDROID_CREATOR;
+        JSONObject client = new JSONObject()
+                .put("clientName", profile.clientName).put("clientVersion", profile.clientVersion)
+                .put("deviceMake", profile.deviceMake).put("deviceModel", profile.deviceModel)
+                .put("osName", profile.osName).put("osVersion", profile.osVersion)
+                .put("androidSdkVersion", profile.androidSdkVersion).put("hl", "en").put("gl", "US");
+        JSONObject body = new JSONObject().put("context", new JSONObject().put("client", client))
+                .put("videoId", videoId).put("contentCheckOk", true).put("racyCheckOk", true);
+        HttpURLConnection connection = (HttpURLConnection) new URL(
+                "https://youtubei.googleapis.com/youtubei/v1/player").openConnection();
+        try {
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("User-Agent", profile.userAgent);
+            connection.setRequestProperty("X-YouTube-Client-Name", String.valueOf(profile.id));
+            connection.setRequestProperty("X-YouTube-Client-Version", profile.clientVersion);
+            for (var header : VotPlayerRequestContext.get(videoId).entrySet()) {
+                connection.setRequestProperty(header.getKey(), header.getValue());
+            }
+            connection.setConnectTimeout(CONNECTION_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setDoOutput(true);
+            byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream out = connection.getOutputStream()) { out.write(bytes); }
+            int code = connection.getResponseCode();
+            if (code != 200) throw new IOException("Signed-in player request failed: HTTP " + code);
+            JSONObject response;
+            try (InputStream in = connection.getInputStream()) {
+                response = new JSONObject(new String(readAllBytes(in), StandardCharsets.UTF_8));
+            }
+            JSONObject stream = response.optJSONObject("streamingData");
+            if (stream == null) {
+                JSONObject status = response.optJSONObject("playabilityStatus");
+                Logger.printDebug(() -> "VOT signed-in player status=" + (status == null ? "missing" : status.optString("status")));
+                return null;
+            }
+            Source source = selectBestJsonAudioFormat(stream.optJSONArray("adaptiveFormats"));
+            return source == null ? null : new Source(source.url(), source.itag(), source.fileSize(),
+                    source.mimeType(), source.bitrate(), profile.userAgent);
+        } finally {
+            connection.disconnect();
         }
     }
 
