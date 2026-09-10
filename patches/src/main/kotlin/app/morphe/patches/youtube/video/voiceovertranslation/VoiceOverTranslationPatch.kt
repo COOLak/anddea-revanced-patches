@@ -4,6 +4,8 @@
  * This file is part of the revanced-patches project:
  * https://github.com/anddea/revanced-patches
  *
+ * Modified by COOLak: cache native source audio for uncached translations.
+ *
  * Original author(s):
  * - anddea (https://github.com/anddea)
  * - Jav1x (https://github.com/Jav1x)
@@ -41,6 +43,18 @@
 
 package app.morphe.patches.youtube.video.voiceovertranslation
 
+import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
+import app.morphe.patches.shared.misc.spoof.CreateStreamingDataFingerprint
+import app.morphe.patches.shared.misc.fix.proto.fixProtoLibraryPatch
+import app.morphe.util.findInstructionIndicesReversedOrThrow
+import app.morphe.util.getReference
+import com.android.tools.smali.dexlib2.AccessFlags
+import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
+import com.android.tools.smali.dexlib2.iface.reference.FieldReference
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patches.youtube.utils.compatibility.Constants.COMPATIBILITY_YOUTUBE
@@ -67,9 +81,43 @@ val voiceOverTranslationBytecodePatch = bytecodePatch(
 ) {
     dependsOn(
         videoInformationPatch,
+        fixProtoLibraryPatch,
     )
 
     execute {
+        // Read the final native fields after optional stream spoofing has completed.
+        // The response's VideoDetails identifies the source even during preloading.
+        CreateStreamingDataFingerprint.let {
+            val streamField = it.instructionMatches[1].instruction.getReference<FieldReference>()!!
+            val detailsField = it.instructionMatches[5].instruction.getReference<FieldReference>()!!
+            val helper = ImmutableMethod(
+                it.classDef.type,
+                "patch_cacheVotAudioSources",
+                emptyList(),
+                "V",
+                AccessFlags.PRIVATE.value or AccessFlags.FINAL.value,
+                null,
+                null,
+                MutableMethodImplementation(3),
+            ).toMutable().apply {
+                addInstructions(
+                    0,
+                    """
+                        iget-object v0, p0, $streamField
+                        iget-object v1, p0, $detailsField
+                        invoke-static { v0, v1 }, $EXTENSION_VOT_CLASS_DESCRIPTOR->cacheAudioSources(Ljava/lang/Object;Ljava/lang/Object;)V
+                        return-void
+                    """
+                )
+            }
+            it.classDef.methods.add(helper)
+            it.method.apply {
+                findInstructionIndicesReversedOrThrow(Opcode.RETURN_VOID).forEach { index ->
+                    addInstruction(index, "invoke-direct { p0 }, $helper")
+                }
+            }
+        }
+
         // Hook video time updates for audio sync
         videoTimeHook(
             EXTENSION_VOT_CLASS_DESCRIPTOR,
