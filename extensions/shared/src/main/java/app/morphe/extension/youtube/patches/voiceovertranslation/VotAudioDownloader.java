@@ -71,7 +71,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 final class VotAudioDownloader {
-    private static final int CHUNK_SIZE_BYTES = 5_295_308;
+    // The worker expands each protobuf byte to up to four JSON bytes. Keep
+    // each envelope below 2 MiB, including metadata, for proxy body limits.
+    static final int CHUNK_SIZE_BYTES = 480 * 1024;
     private static final int CONNECTION_TIMEOUT_MS = 15_000;
     private static final int READ_TIMEOUT_MS = 30_000;
     private static final String AUDIO_DOWNLOAD_TYPE = "web_api_steal_sig_and_n";
@@ -208,6 +210,8 @@ final class VotAudioDownloader {
             if (!VotApiClient.sendPartialAudio(videoUrl, translationId, fileId, parts, 1, i, audioData)) {
                 return false;
             }
+            final int completed = i + 1;
+            Logger.printDebug(() -> "VOT audio upload: accepted part " + completed + "/" + parts);
         }
         return true;
     }
