@@ -655,16 +655,6 @@ public class VoiceOverTranslationPatch {
         }
     }
 
-    public static void cachePlayerHeaders(String url, java.util.Map<String, String> headers) {
-        if (!Settings.VOT_ENABLED.get()) return;
-        try {
-            String videoId = VotPlayerRequestContext.put(url, headers);
-            if (videoId != null) Logger.printDebug(() -> "VOT player request context available for " + videoId);
-        } catch (RuntimeException e) {
-            Logger.printDebug(() -> "VOT player request context unavailable");
-        }
-    }
-
     private static void startAudioPlayback(long requestId, String videoId, String audioUrl, String fallbackUrl) {
         if (!isCurrentTranslationRequest(requestId, videoId)) return;
         stopAudioPlayback();

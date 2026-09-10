@@ -48,8 +48,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
 import app.morphe.patches.shared.misc.spoof.CreateStreamingDataFingerprint
 import app.morphe.patches.shared.misc.fix.proto.fixProtoLibraryPatch
-import app.morphe.patches.shared.misc.request.buildRequestPatch
-import app.morphe.patches.shared.misc.request.hookBuildRequest
+import app.morphe.patches.youtube.utils.auth.authHookPatch
 import app.morphe.util.findInstructionIndicesReversedOrThrow
 import app.morphe.util.getReference
 import com.android.tools.smali.dexlib2.AccessFlags
@@ -84,11 +83,10 @@ val voiceOverTranslationBytecodePatch = bytecodePatch(
     dependsOn(
         videoInformationPatch,
         fixProtoLibraryPatch,
-        buildRequestPatch,
+        authHookPatch,
     )
 
     execute {
-        hookBuildRequest("$EXTENSION_VOT_CLASS_DESCRIPTOR->cachePlayerHeaders(Ljava/lang/String;Ljava/util/Map;)V")
         // Read the final native fields after optional stream spoofing has completed.
         // The response's VideoDetails identifies the source even during preloading.
         CreateStreamingDataFingerprint.let {

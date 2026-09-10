@@ -64,6 +64,7 @@ import java.util.regex.Pattern;
 
 import app.morphe.extension.shared.utils.Logger;
 import app.morphe.extension.shared.spoof.ClientType;
+import app.morphe.extension.shared.innertube.utils.AuthUtils;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -114,11 +115,11 @@ final class VotAudioDownloader {
                 Logger.printDebug(() -> "VOT native audio source unavailable; trying next source", e);
             }
         }
-        if (!VotPlayerRequestContext.get(videoId).isEmpty()) {
+        if (!AuthUtils.isNotLoggedIn()) {
             try {
                 Source source = fetchCreatorAudioFormat(videoId);
                 if (source != null) {
-                    Logger.printDebug(() -> "VOT audio downloader: trying signed-in Android Studio audio");
+                    Logger.printDebug(() -> "VOT audio downloader: trying signed-in YouTube Studio audio");
                     return downloadAndSendSource(source, videoUrl, translationId);
                 }
             } catch (Exception e) {
@@ -157,8 +158,8 @@ final class VotAudioDownloader {
             connection.setRequestProperty("User-Agent", profile.userAgent);
             connection.setRequestProperty("X-YouTube-Client-Name", String.valueOf(profile.id));
             connection.setRequestProperty("X-YouTube-Client-Version", profile.clientVersion);
-            for (var header : VotPlayerRequestContext.get(videoId).entrySet()) {
-                connection.setRequestProperty(header.getKey(), header.getValue());
+            for (var header : AuthUtils.getRequestHeader().entrySet()) {
+                if (!isEmpty(header.getValue())) connection.setRequestProperty(header.getKey(), header.getValue());
             }
             connection.setConnectTimeout(CONNECTION_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
@@ -213,9 +214,8 @@ final class VotAudioDownloader {
 
     @Nullable
     private static Source fetchAudioFormat(String videoId) throws Exception {
-        // The web extension uses a dedicated ANDROID_VR InnerTube request here. Do not
-        // start another spoof-stream request: that path may invoke the JavaScript
-        // challenge solver even though VOT only needs a direct audio URL.
+        // Retain the legacy client as a last fallback for environments where its
+        // direct media URLs remain available. Native and signed-in sources run first.
         return fetchAudioFormatFromYouTube(videoId);
     }
 
